@@ -51,33 +51,14 @@ const app = new Application<AppState>();
 //Create a new router (routes to webpages)
 const router = new Router<AppState>();
 
+let activeMatches = []; // Array of matches that are currently ongoing
+let activeUsers = [] // Array of users that are actively logged in
 
 /* User specific routes
  * These routes are specific to the user and are meant to be called rapidly
  * (e.g. login, logout, status, update biometrics, pose accuracy, etc.)
  *
  */
-/** Reoute to get login status
- * Testing and Working - 2/4
- *
- * @returns {boolean} GoogleLoggedIn- True if user is logged in with Google, false if not
- * @returns {integer} userID - The active user's dbID
- */
-router.get("/getLoggedIn", async (ctx) => {
-    // const userId = ctx.state.session.get("id");
-    const userId = dbID
-    console.log(userId)
-    if (userId !== undefined && userId !== null) {
-        ctx.response.body = {GoogleLoggedIn: await validateLogin(), userID: userId};
-        ctx.response.status = 200;
-        console.log("User is logged in with TAC");
-    } else {
-        ctx.response.body = {GoogleLoggedIn: false, message: "User is not logged in"};
-        ctx.response.status = 402;
-        console.log("User is not logged in with TAC");
-    }
-});
-
 router.post("/login", async (ctx) => {
     try {
         const { username, password } = await ctx.request.body().value;
@@ -99,6 +80,43 @@ router.post("/login", async (ctx) => {
         }
     } catch (error) {
         console.error("Error during login:", error);
+        ctx.response.body = { message: "Internal server error" };
+        ctx.response.status = 500;
+    }
+});
+
+router.get("/status", async (ctx) => {
+    try {
+        const userID = ctx.request.url.searchParams.get("userID");
+        const user = activeUsers.find((u) => u.id === userID);
+
+        if (user) {
+            ctx.response.body = { message: "User is active", user };
+            ctx.response.status = 200;
+        } else {
+            ctx.response.body = { message: "User is not active" };
+            ctx.response.status = 404;
+        }
+    } catch (error) {
+        console.error("Error checking user status:", error);
+        ctx.response.body = { message: "Internal server error" };
+        ctx.response.status = 500;
+    }
+});
+
+router.post("/logout", async (ctx) => {
+    try {
+        const { userID } = await ctx.request.body().value;
+
+        // Remove the user from the list of actively logged-in users
+        activeUsers = activeUsers.filter((u) => u.id !== userID);
+
+        // Clear the session
+        ctx.state.session.set("user", null);
+        ctx.response.body = { message: "Logout successful" };
+        ctx.response.status = 200;
+    } catch (error) {
+        console.error("Error during logout:", error);
         ctx.response.body = { message: "Internal server error" };
         ctx.response.status = 500;
     }
@@ -186,8 +204,10 @@ router.post("/updateResponseToStimuli", async (ctx) => {
  */
 router.post("/createMatch", async (ctx) => {
     try {
-        const { users } = await ctx.request.body().value;
+        const { userIDs } = await ctx.request.body().value;
+        const users = activeUsers.filter((user) => userIDs.includes(user.id));
         const match = new Match();
+        activeMatches.push(match);
 
         users.forEach((user: User) => {
             match.addUser(user);
@@ -200,6 +220,109 @@ router.post("/createMatch", async (ctx) => {
         ctx.response.body = { message: "Internal server error" };
         ctx.response.status = 500;
     }
+});
+
+router.post("/joinMatch", async (ctx) => {
+    try {
+        const { userID, matchID } = await ctx.request.body().value;
+        const match = activeMatches.find((m) => m.id === matchID);
+        const user = activeUsers.find((u) => u.id === userID);
+
+        if (match && user) {
+            match.addUser(user);
+            ctx.response.body = { message: "User joined match successfully" };
+            ctx.response.status = 200;
+        } else {
+            ctx.response.body = { message: "Match or user not found" };
+            ctx.response.status = 404;
+        }
+    } catch (error) {
+        console.error("Error joining match:", error);
+        ctx.response.body = { message: "Internal server error" };
+        ctx.response.status = 500;
+    }
+});
+
+router.post("/leaveMatch", async (ctx) => {
+    try {
+        const { userID, matchID } = await ctx.request.body().value;
+        const match = activeMatches.find((m) => m.id === matchID);
+        const user = activeUsers.find((u) => u.id === userID);
+
+        if (match && user) {
+            match.removeUser(user);
+            ctx.response.body = { message: "User left match successfully" };
+            ctx.response.status = 200;
+        } else {
+            ctx.response.body = { message: "Match or user not found" };
+            ctx.response.status = 404;
+        }
+    } catch (error) {
+        console.error("Error leaving match:", error);
+        ctx.response.body = { message: "Internal server error" };
+        ctx.response.status = 500;
+    }
+});
+
+router.post("/endMatch", async (ctx) => {
+    try {
+        const { matchID } = await ctx.request.body().value;
+        const matchIndex = activeMatches.findIndex((m) => m.id === matchID);
+
+        if (matchIndex !== -1) {
+            activeMatches.splice(matchIndex, 1);
+            ctx.response.body = { message: "Match ended successfully" };
+            ctx.response.status = 200;
+        } else {
+            ctx.response.body = { message: "Match not found" };
+            ctx.response.status = 404;
+        }
+    } catch (error) {
+        console.error("Error ending match:", error);
+        ctx.response.body = { message: "Internal server error" };
+        ctx.response.status = 500;
+    }
+});
+
+router.get("/getLeaderboard", (ctx) => {
+    try {
+        const { matchID } = ctx.request.url.searchParams;
+        const match = activeMatches.find((m) => m.getMatchID() === matchID);
+
+        if (match) {
+            ctx.response.body = { leaderboard: [...match.leaderboard.entries()] };
+            ctx.response.status = 200;
+        } else {
+            ctx.response.body = { message: "Match not found" };
+            ctx.response.status = 404;
+        }
+    } catch (error) {
+        console.error("Error getting leaderboard:", error);
+        ctx.response.body = { message: "Internal server error" };
+        ctx.response.status = 500;
+    }
+});
+
+router.get("/getActiveMatches", (ctx) => {
+    try {
+        ctx.response.body = { activeMatches: activeMatches.map(match => match.getMatchID()) };
+        ctx.response.status = 200;
+    } catch (error) {
+        console.error("Error getting active matches:", error);
+        ctx.response.body = { message: "Internal server error" };
+        ctx.response.status = 500;
+    }
+});
+
+router.get("/getActiveUsers", (ctx) => {
+   try {
+         ctx.response.body = { activeUsers: activeUsers.map(user => user.id) };
+         ctx.response.status = 200;
+   } catch (error) {
+         console.error("Error getting active users:", error);
+         ctx.response.body = { message: "Internal server error" };
+         ctx.response.status = 500;
+   }
 });
 
 
