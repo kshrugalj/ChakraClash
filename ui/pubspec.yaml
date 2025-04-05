@@ -9,6 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  camera: ^0.11.1
+  web_socket_channel: ^3.0.2
+  palette_generator: ^0.3.3
+  youtube_player_flutter: ^9.1.1
+  flutter_tts: ^4.2.2
 
 dev_dependencies:
   flutter_test:
@@ -17,3 +22,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/
+    
