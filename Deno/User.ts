@@ -12,6 +12,7 @@
  * @property {string} name - Name of the user
  * @property {string} location - Location of the user
  *
+ * TODO: Add another method to create a new User object from existing data
  */
 export class User {
     userID: string; // Unique identifier for the user
